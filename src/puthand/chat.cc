@@ -37,9 +37,10 @@ static const SessionPort CHAT_PORT = 27;
 
 /* static data. */
 static ajn::BusAttachment* s_bus = NULL;
-static qcc::String s_advertisedName = "org.alljoyn.bus.samples.chat.iot_hand";
+static qcc::String s_joinName = "org.alljoyn.bus.samples.chat.iot_hand";
 static qcc::String s_sessionHost;
 static SessionId s_sessionId = 0;
+static bool s_joinComplete = false;
 static volatile sig_atomic_t s_interrupt = false;
 
 static void CDECL_CALL SigIntHandler(int sig)
@@ -134,6 +135,30 @@ class MyBusListener : public BusListener, public SessionPortListener, public Ses
     void FoundAdvertisedName(const char* name, TransportMask transport, const char* namePrefix)
     {
         printf("FoundAdvertisedName(name='%s', transport = 0x%x, prefix='%s')\n", name, transport, namePrefix);
+
+        if (s_sessionHost.empty()) {
+            printf("Discovered chat conversation\n");
+
+            /* Join the conversation */
+            /* Since we are in a callback we must enable concurrent callbacks before calling a synchronous method. */
+            s_sessionHost = name;
+            s_bus->EnableConcurrentCallbacks();
+            SessionOpts opts(SessionOpts::TRAFFIC_MESSAGES, true, SessionOpts::PROXIMITY_ANY, TRANSPORT_ANY);
+            QStatus status = s_bus->JoinSession(name, CHAT_PORT, this, s_sessionId, opts);
+            if (ER_OK == status) {
+                printf("Joined conversation\n");
+            } else {
+                printf("JoinSession failed (status=%s)\n", QCC_StatusText(status));
+            }
+            uint32_t timeout = 20;
+            status = s_bus->SetLinkTimeout(s_sessionId, timeout);
+            if (ER_OK == status) {
+                printf("Set link timeout to %d\n", timeout);
+            } else {
+                printf("Set link timeout failed\n");
+            }
+            s_joinComplete = true;
+        }
     }
     void LostAdvertisedName(const char* name, TransportMask transport, const char* namePrefix)
     {
@@ -241,48 +266,40 @@ QStatus ConnectBusAttachment(void)
     return status;
 }
 
-/** Request the service name, report the result to stdout, and return the status code. */
-QStatus RequestName(void)
+/** Begin discovery on the well-known name of the service to be called, report the result to
+   stdout, and return the result status. */
+QStatus FindAdvertisedName(void)
 {
-    QStatus status = s_bus->RequestName(s_advertisedName.c_str(), DBUS_NAME_FLAG_DO_NOT_QUEUE);
+    /* Begin discovery on the well-known name of the service to be called */
+    QStatus status = s_bus->FindAdvertisedName(s_joinName.c_str());
 
-    if (ER_OK == status) {
-        printf("RequestName('%s') succeeded.\n", s_advertisedName.c_str());
+    if (status == ER_OK) {
+        printf("org.alljoyn.Bus.FindAdvertisedName ('%s') succeeded.\n", s_joinName.c_str());
     } else {
-        printf("RequestName('%s') failed (status=%s).\n", s_advertisedName.c_str(), QCC_StatusText(status));
+        printf("org.alljoyn.Bus.FindAdvertisedName ('%s') failed (%s).\n", s_joinName.c_str(), QCC_StatusText(status));
     }
 
     return status;
 }
 
-/** Create the session, report the result to stdout, and return the status code. */
-QStatus CreateSession(TransportMask mask)
+/** Wait for join session to complete, report the event to stdout, and return the result status. */
+QStatus WaitForJoinSessionCompletion(void)
 {
-    SessionOpts opts(SessionOpts::TRAFFIC_MESSAGES, true, SessionOpts::PROXIMITY_ANY, mask);
-    SessionPort sp = CHAT_PORT;
-    QStatus status = s_bus->BindSessionPort(sp, opts, s_busListener);
+    unsigned int count = 0;
 
-    if (ER_OK == status) {
-        printf("BindSessionPort succeeded.\n");
-    } else {
-        printf("BindSessionPort failed (%s).\n", QCC_StatusText(status));
+    while (!s_joinComplete && !s_interrupt) {
+        if (0 == (count++ % 100)) {
+            printf("Waited %u seconds for JoinSession completion.\n", count / 100);
+        }
+
+#ifdef _WIN32
+        Sleep(10);
+#else
+        usleep(10 * 1000);
+#endif
     }
 
-    return status;
-}
-
-/** Advertise the service name, report the result to stdout, and return the status code. */
-QStatus AdvertiseName(TransportMask mask)
-{
-    QStatus status = s_bus->AdvertiseName(s_advertisedName.c_str(), mask);
-
-    if (ER_OK == status) {
-        printf("Advertisement of the service name '%s' succeeded.\n", s_advertisedName.c_str());
-    } else {
-        printf("Failed to advertise name '%s' (%s).\n", s_advertisedName.c_str(), QCC_StatusText(status));
-    }
-
-    return status;
+    return s_joinComplete && !s_interrupt ? ER_OK : ER_ALLJOYN_JOINSESSION_REPLY_CONNECT_FAILED;
 }
 
 /** Take input from stdin and send it as a chat message, continue until an error or
@@ -346,26 +363,12 @@ int CDECL_CALL main(int argc, char** argv)
             status = ConnectBusAttachment();
         }
 
-        /*
-            * Advertise this service on the bus.
-            * There are three steps to advertising this service on the bus.
-            * 1) Request a well-known name that will be used by the client to discover
-            *    this service.
-            * 2) Create a session.
-            * 3) Advertise the well-known name.
-            */
         if (ER_OK == status) {
-            status = RequestName();
-        }
-
-        const TransportMask SERVICE_TRANSPORT_TYPE = TRANSPORT_ANY;
-
-        if (ER_OK == status) {
-            status = CreateSession(SERVICE_TRANSPORT_TYPE);
+            status = FindAdvertisedName();
         }
 
         if (ER_OK == status) {
-            status = AdvertiseName(SERVICE_TRANSPORT_TYPE);
+            status = WaitForJoinSessionCompletion();
         }
 
         if (ER_OK == status) {
