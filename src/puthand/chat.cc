@@ -27,6 +27,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <signal.h>
+#include <json/json.h>
 
 using namespace ajn;
 
@@ -122,6 +123,11 @@ class ChatObject : public BusObject {
         QCC_UNUSED(member);
         QCC_UNUSED(srcPath);
         printf("%s: %s\n", msg->GetSender(), msg->GetArg(0)->v_string.str);
+
+		Json::Value jData;
+		Json::Reader read;
+
+		read.parse(msg->GetArg(0)->v_string.str, jData);
     }
 
 	virtual void GetProp(const InterfaceDescription::Member* /*member*/, Message& /*msg*/) {}

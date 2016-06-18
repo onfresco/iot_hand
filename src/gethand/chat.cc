@@ -292,63 +292,32 @@ void SampleListener::onExit(const Controller& controller) {
 }
 
 void SampleListener::onFrame(const Controller& controller) {
-	// Get the most recent frame and report some basic information
-	const Frame frame = controller.frame();
-	std::cout << "Frame id: " << frame.id()
-		<< ", timestamp: " << frame.timestamp()
-		<< ", hands: " << frame.hands().count()
-		<< ", extended fingers: " << frame.fingers().extended().count() << std::endl;
+	std::string s = "[";
 
-	HandList hands = frame.hands();
+	HandList hands = controller.frame().hands();
 	for (HandList::const_iterator hl = hands.begin(); hl != hands.end(); ++hl) {
-		// Get the first hand
-		const Hand hand = *hl;
-		std::string handType = hand.isLeft() ? "Left hand" : "Right hand";
-		std::cout << std::string(2, ' ') << handType << ", id: " << hand.id()
-			<< ", palm position: " << hand.palmPosition() << std::endl;
-		// Get the hand's normal vector and direction
-		const Vector normal = hand.palmNormal();
-		const Vector direction = hand.direction();
+		const FingerList fingers = (*hl).fingers();
 
-		// Calculate the hand's pitch, roll, and yaw angles
-		std::cout << std::string(2, ' ') << "pitch: " << direction.pitch() * RAD_TO_DEG << " degrees, "
-			<< "roll: " << normal.roll() * RAD_TO_DEG << " degrees, "
-			<< "yaw: " << direction.yaw() * RAD_TO_DEG << " degrees" << std::endl;
+		s += "[";
 
-		// Get the Arm bone
-		Arm arm = hand.arm();
-		std::cout << std::string(2, ' ') << "Arm direction: " << arm.direction()
-			<< " wrist position: " << arm.wristPosition()
-			<< " elbow position: " << arm.elbowPosition() << std::endl;
-
-		// Get fingers
-		const FingerList fingers = hand.fingers();
 		for (FingerList::const_iterator fl = fingers.begin(); fl != fingers.end(); ++fl) {
-			const Finger finger = *fl;
-			std::cout << std::string(4, ' ') << fingerNames[finger.type()]
-				<< " finger, id: " << finger.id()
-				<< ", length: " << finger.length()
-				<< "mm, width: " << finger.width() << std::endl;
-
-			// Get finger bones
+			s += "[";
 			for (int b = 0; b < 4; ++b) {
 				Bone::Type boneType = static_cast<Bone::Type>(b);
-				Bone bone = finger.bone(boneType);
-				std::cout << std::string(6, ' ') << boneNames[boneType]
-					<< " bone, start: " << bone.prevJoint()
-					<< ", end: " << bone.nextJoint()
-					<< ", direction: " << bone.direction() << std::endl;
+				Bone bone = (*fl).bone(boneType);
+				s += "[\"";
+				s += bone.direction().toString();
+				s += "\"],";
 			}
+			s += "],";
 		}
+		s += "],";
 	}
 
+	s += "]";
 
-	s_chatObj->SendChatSignal(std::to_string(GetTickCount()).data());
 
-	if (!frame.hands().isEmpty()) {
-		std::cout << std::endl;
-	}
-
+	s_chatObj->SendChatSignal(s.data());
 }
 
 void SampleListener::onFocusGained(const Controller& controller) {
@@ -484,7 +453,7 @@ int CDECL_CALL main(int argc, char** argv)
 		// Have the sample listener receive events from the controller
 		controller.addListener(listener);
 
-		if (argc > 1 && strcmp(argv[1], "--bg") == 0)
+	//	if (argc > 1 && strcmp(argv[1], "--bg") == 0)
 			controller.setPolicy(Leap::Controller::POLICY_BACKGROUND_FRAMES);
 
 		controller.setPolicy(Leap::Controller::POLICY_ALLOW_PAUSE_RESUME);

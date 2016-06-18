@@ -12,6 +12,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\..\src\puthand\chat.cc" />
+    <ClCompile Include="..\..\..\src\puthand\jsoncpp.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{8A23D35F-A389-47E9-B8C4-64A37FB45A35}</ProjectGuid>
